@@ -570,7 +570,7 @@ function render() {
       <div class="modal" onclick="event.stopPropagation()">
         <div class="mhead"><div class="mtitle">📤 Importar Excel</div><button class="mclose" onclick="closeImport()">✕</button></div>
         <div class="mdesc">El archivo debe tener columnas <b>Nº</b> y <b>Cantidad</b>.<br>Exporta primero para obtener el formato correcto.</div>
-        <input type="file" accept=".xlsx,.xls" id="fileInput" style="display:none" onchange="handleFile(this)">
+        <input type="file" accept=".xlsx,.xls,.xlsm" id="fileInput" style="display:none" onchange="handleFile(this)">
         <button class="mbtn primary" onclick="document.getElementById('fileInput').click()">Seleccionar archivo...</button>
         <button class="mbtn secondary" onclick="closeImport()">Cancelar</button>
       </div>
