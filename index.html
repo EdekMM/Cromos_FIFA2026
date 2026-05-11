@@ -85,6 +85,9 @@ const CL=[
   {id:624,name:"OFFICIAL EMBLEM",team:"Special",type:"SPE"},{id:625,name:"MASCOTA MAPLE™",team:"Special",type:"SPE"},{id:626,name:"MASCOTA CLUTCH™",team:"Special",type:"SPE"},{id:627,name:"MASCOTA ZAYU™",team:"Special",type:"SPE"},{id:628,name:"ETERNOS 22 - DEFENSAS",team:"Special",type:"SPE"},{id:629,name:"ETERNOS 22 - CENTROCAMPISTAS",team:"Special",type:"SPE"},{id:630,name:"ETERNOS 22 - DELANTEROS",team:"Special",type:"SPE"}
 ];
 
+const cardMap = {};
+CL.forEach(c => { cardMap[c.id] = c; });
+
 const TYPE_LABEL={GB:"Golden Baller",FF:"Fan Favourite",IC:"Icon",HERO:"Hero",CREST:"Team Crest",CONT:"Contender",TK:"Top Keeper",DR:"Defensive Rock",MM:"Midfield Maestro",GM:"Goal Machine",MR:"Master Rookie",SPE:"Special"};
 const TYPE_COLOR={GB:"#f59e0b",FF:"#a855f7",IC:"#3b82f6",HERO:"#10b981",CREST:"#6b7280",CONT:"#f97316",TK:"#06b6d4",DR:"#ef4444",MM:"#8b5cf6",GM:"#ec4899",MR:"#14b8a6",SPE:"#f59e0b"};
 const TEAMS_ORDER=["Golden Baller","Algeria","Argentina","Australia","Austria","Belgium","Brazil","Canada","Cabo Verde","Colombia","Croatia","Curaçao","Ecuador","Egypt","England","France","Germany","Ghana","Haiti","Iran","Ivory Coast","Japan","Jordan","Korea Republic","Mexico","Morocco","Netherlands","New Zealand","Norway","Panama","Paraguay","Portugal","Qatar","Saudi Arabia","Scotland","Senegal","South Africa","Spain","Switzerland","Tunisia","USA","Uruguay","Uzbekistan","Denmark","Italy","Jamaica","Poland","Sweden","Turkey","Contenders","Special"];
@@ -94,6 +97,16 @@ let curView='checklist', curTab='todos', curSearch='', curTeam='Todas';
 let activeModal=null, showImport=false, showPrefs=false;
 let syncStatus='loading';
 let saveTimer=null;
+
+// ── SOBRE STATE ─────────────────────────────────────────────
+let sobreHistory = [];
+let sobreInput = '';
+
+// ── CAMBIO STATE ─────────────────────────────────────────────
+let cambioStep = 'dar';
+let cambioDar = null;
+let cambioRecibir = null;
+let cambioInput = '';
 
 // ── FIREBASE SYNC ──────────────────────────────────────────
 async function loadFromFirebase() {
@@ -139,6 +152,221 @@ function scheduleSave() {
 function addCard(id) { col[id]=(col[id]||0)+1; scheduleSave(); render(); }
 function removeCard(id) { if(!col[id])return; if(col[id]<=1)delete col[id]; else col[id]--; scheduleSave(); render(); }
 
+
+// ── SOBRE ─────────────────────────────────────────────────────
+function renderSobrePanel() {
+  const panel = document.getElementById('sobrePanel');
+  if (!panel) return;
+  const owned = CL.filter(c=>col[c.id]>0).length;
+  const pct = Math.round(owned/630*100);
+
+  let histHTML = '';
+  if (sobreHistory.length) {
+    histHTML = '<div style="margin-top:12px"><div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:700">ÚLTIMOS AÑADIDOS</div>';
+    sobreHistory.slice(0,5).forEach(function(h) {
+      var c = cardMap[h.id];
+      var wasRepe = h.prevQty > 0;
+      histHTML += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1e293b">' +
+        '<span style="font-size:12px;font-weight:900;color:' + (wasRepe?'#fbbf24':'#4ade80') + ';min-width:28px">' + h.id + '</span>' +
+        '<span style="flex:1;font-size:12px;color:#cbd5e1">' + c.name + '</span>' +
+        '<span style="font-size:10px;color:' + (wasRepe?'#fbbf24':'#4ade80') + '">' + (wasRepe?'REPE':'NUEVO') + '</span></div>';
+    });
+    histHTML += '<button onclick="sobreUndo()" style="width:100%;margin-top:8px;padding:9px;border-radius:10px;border:none;background:#1e293b;color:#94a3b8;font-weight:600;font-size:13px;cursor:pointer">↩ Deshacer último</button></div>';
+  }
+
+  panel.innerHTML = '<div style="padding:14px 12px 130px">' +
+    '<div style="background:#1e3a5f;border-radius:12px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">' +
+    '<span style="font-size:13px;font-weight:700">📦 Modo sobre</span>' +
+    '<span style="font-size:12px;color:#34d399;font-weight:700">' + owned + '/630 · ' + pct + '%</span></div>' +
+    '<div style="font-size:12px;color:#64748b;margin-bottom:6px;font-weight:700">NÚMERO DEL CROMO</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+    '<input id="sobreInp" type="number" min="1" max="630" placeholder="Ej: 124"' +
+    ' oninput="sobreSetInput(this.value)"' +
+    ' onkeydown="if(event.keyCode==13)sobreBuscar()"' +
+    ' style="flex:1;padding:14px;border-radius:12px;border:2px solid #334155;background:#1e293b;color:#fff;font-size:22px;font-weight:900;outline:none;text-align:center;box-sizing:border-box"' +
+    ' autocomplete="off">' +
+    '<button onclick="sobreBuscar()" style="padding:14px 18px;border-radius:12px;border:none;background:#3b82f6;color:#fff;font-size:22px;cursor:pointer;font-weight:900">→</button></div>' +
+    '<div id="sobrePreviewArea"></div>' +
+    histHTML + '</div>';
+
+  setTimeout(function(){ var i=document.getElementById('sobreInp'); if(i){i.value=sobreInput;i.focus();} }, 30);
+}
+
+function sobreBuscar() {
+  var n = parseInt(sobreInput);
+  if (!sobreInput || isNaN(n)) { showToast('⚠️ Introduce un número'); return; }
+  if (n < 1 || n > 630) { showToast('⚠️ Número entre 1 y 630'); return; }
+  if (!cardMap[n]) { showToast('⚠️ Número no encontrado'); return; }
+  var c = cardMap[n];
+  var qty = col[n] || 0;
+  var isRepe = qty > 0;
+  var bg = isRepe ? '#422006' : '#052e16';
+  var color = isRepe ? '#fbbf24' : '#4ade80';
+  var label = isRepe ? ('🔄 REPETIDO (tienes ' + qty + ')') : '✨ NUEVO';
+  var area = document.getElementById('sobrePreviewArea');
+  if (!area) return;
+  area.innerHTML = '<div style="background:' + bg + ';border-radius:14px;padding:16px;margin-bottom:12px;text-align:center;border:2px solid ' + color + '">' +
+    '<div style="font-size:13px;color:' + color + ';font-weight:700;margin-bottom:4px">' + label + '</div>' +
+    '<div style="font-size:28px;font-weight:900;color:' + color + '">' + c.id + '</div>' +
+    '<div style="font-size:16px;font-weight:700;color:#fff;margin:4px 0">' + c.name + '</div>' +
+    '<div style="font-size:12px;color:#94a3b8">' + c.team + ' · ' + TYPE_LABEL[c.type] + '</div>' +
+    '<div style="display:flex;gap:10px;margin-top:14px">' +
+    '<button onclick="sobreClear()" style="flex:1;padding:12px;border-radius:11px;border:none;background:#334155;color:#94a3b8;font-weight:700;font-size:14px;cursor:pointer">✕ Borrar</button>' +
+    '<button onclick="sobreConfirmar(' + n + ')" style="flex:2;padding:12px;border-radius:11px;border:none;background:' + (isRepe?'#d97706':'#16a34a') + ';color:#fff;font-weight:700;font-size:16px;cursor:pointer">✓ Confirmar</button>' +
+    '</div></div>';
+}
+
+function sobreConfirmar(id) {
+  var prevQty = col[id] || 0;
+  sobreHistory.unshift({id:id, prevQty:prevQty});
+  if (sobreHistory.length > 10) sobreHistory.pop();
+  col[id] = prevQty + 1;
+  scheduleSave();
+  sobreInput = '';
+  renderSobrePanel();
+}
+
+function sobreClear() {
+  sobreInput = '';
+  var area = document.getElementById('sobrePreviewArea');
+  if (area) area.innerHTML = '';
+  var inp = document.getElementById('sobreInp');
+  if (inp) { inp.value = ''; inp.focus(); }
+}
+
+function sobreUndo() {
+  if (!sobreHistory.length) return;
+  var h = sobreHistory.shift();
+  if (h.prevQty === 0) delete col[h.id]; else col[h.id] = h.prevQty;
+  scheduleSave();
+  renderSobrePanel();
+}
+
+// ── CAMBIO ─────────────────────────────────────────────────────
+function renderCambioPanel() {
+  var panel = document.getElementById('cambioPanel');
+  if (!panel) return;
+
+  var stepLabel = cambioStep==='dar' ? '1. ¿Qué cromo DAS?' : cambioStep==='recibir' ? '2. ¿Qué cromo RECIBES?' : '3. Confirma el cambio';
+  var color = cambioStep==='dar' ? '#ef4444' : '#10b981';
+
+  var inputSection = '';
+  if (cambioStep !== 'confirm') {
+    inputSection = '<div style="margin-bottom:12px">' +
+      '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+      '<input id="cambioInp" type="number" min="1" max="630" placeholder="Ej: 124"' +
+      ' oninput="cambioSetInput(this.value)"' +
+      ' onkeydown="if(event.keyCode==13)cambioNext()"' +
+      ' style="flex:1;padding:14px;border-radius:12px;border:2px solid ' + color + '55;background:#1e293b;color:#fff;font-size:20px;font-weight:900;outline:none;text-align:center;box-sizing:border-box"' +
+      ' autocomplete="off">' +
+      '<button onclick="cambioNext()" style="padding:14px 18px;border-radius:12px;border:none;background:' + color + ';color:#fff;font-size:20px;cursor:pointer;font-weight:900">→</button></div>' +
+      '<div id="cambioPreviewArea"></div>' +
+      '</div>';
+  }
+
+  var confirmSection = '';
+  if (cambioStep==='confirm' && cambioDar && cambioRecibir) {
+    var rQty = col[cambioRecibir.id] || 0;
+    confirmSection = '<div style="background:#1e293b;border-radius:14px;padding:14px;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
+      '<div style="flex:1;background:#2d1b1b;border-radius:10px;padding:10px;border-left:3px solid #ef4444">' +
+      '<div style="font-size:11px;color:#ef4444;font-weight:700;margin-bottom:3px">DAS</div>' +
+      '<div style="font-size:14px;font-weight:900;color:#fff">' + cambioDar.id + ' · ' + cambioDar.name + '</div>' +
+      '<div style="font-size:11px;color:#64748b">' + cambioDar.team + '</div></div>' +
+      '<div style="font-size:20px">⇄</div>' +
+      '<div style="flex:1;background:#1a2d1b;border-radius:10px;padding:10px;border-left:3px solid #10b981">' +
+      '<div style="font-size:11px;color:#10b981;font-weight:700;margin-bottom:3px">RECIBES</div>' +
+      '<div style="font-size:14px;font-weight:900;color:#fff">' + cambioRecibir.id + ' · ' + cambioRecibir.name + '</div>' +
+      '<div style="font-size:11px;color:#64748b">' + cambioRecibir.team + '</div>' +
+      (rQty>0 ? '<div style="font-size:10px;color:#f59e0b">⚠️ Ya tienes ' + rQty + ' (será repe)</div>' : '') +
+      '</div></div>' +
+      '<div style="display:flex;gap:8px">' +
+      '<button onclick="cambioReset()" style="flex:1;padding:12px;border-radius:11px;border:none;background:#334155;color:#94a3b8;font-weight:700;font-size:14px;cursor:pointer">✕ Cancelar</button>' +
+      '<button onclick="cambioConfirm()" style="flex:2;padding:12px;border-radius:11px;border:none;background:#16a34a;color:#fff;font-weight:700;font-size:16px;cursor:pointer">✓ Confirmar cambio</button>' +
+      '</div></div>';
+  }
+
+  var dots = ['dar','recibir','confirm'].map(function(s,i) {
+    var active = cambioStep===s || (cambioStep==='recibir'&&i===0) || (cambioStep==='confirm'&&i<=1);
+    return '<div style="width:8px;height:8px;border-radius:50%;background:' + (active?'#3b82f6':'#334155') + '"></div>';
+  }).join('');
+
+  panel.innerHTML = '<div style="padding:14px 12px 130px">' +
+    '<div style="background:#1e3a5f;border-radius:12px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">' +
+    '<span style="font-size:13px;font-weight:700">🔄 Modo cambio</span>' +
+    '<div style="display:flex;gap:6px">' + dots + '</div></div>' +
+    '<div style="font-size:14px;font-weight:700;color:#94a3b8;margin-bottom:10px">' + stepLabel + '</div>' +
+    inputSection + confirmSection +
+    (cambioStep!=='dar' ? '<button onclick="cambioReset()" style="width:100%;padding:10px;border-radius:10px;border:none;background:#1e293b;color:#64748b;font-weight:600;font-size:13px;cursor:pointer">↩ Empezar de nuevo</button>' : '') +
+    '</div>';
+
+  if (cambioStep !== 'confirm') {
+    setTimeout(function() {
+      var inp = document.getElementById('cambioInp');
+      if (inp) { inp.value = cambioInput; inp.focus(); }
+    }, 30);
+  }
+}
+
+function cambioSetInput(val) { cambioInput = val; cambioPrevisualize(); }
+function sobreSetInput(val) { sobreInput = val; }
+
+function cambioPrevisualize() {
+  var n = parseInt(cambioInput);
+  var area = document.getElementById('cambioPreviewArea');
+  if (!area) return;
+  if (!cambioInput || isNaN(n) || n<1 || n>630 || !cardMap[n]) { area.innerHTML=''; return; }
+  var c = cardMap[n];
+  var qty = col[c.id] || 0;
+  var color = cambioStep==='dar' ? '#ef4444' : '#10b981';
+  var statusColor, statusText;
+  if (cambioStep==='dar') {
+    statusColor = qty>1?'#34d399':qty===1?'#f59e0b':'#ef4444';
+    statusText = qty>1?('✅ Tienes '+qty+' (puedes cambiar)'):qty===1?'⚠️ Solo tienes 1 — necesitas un repetido':'❌ No tienes este cromo';
+  } else {
+    statusColor = qty>0?'#f59e0b':'#34d399';
+    statusText = qty>0?('⚠️ Ya tienes '+qty+' (será repetido)'):'✨ No lo tienes — cromo nuevo';
+  }
+  area.innerHTML = '<div style="background:#1e293b;border-radius:10px;padding:10px;border-left:3px solid '+color+'">' +
+    '<div style="font-size:15px;font-weight:900;color:#fff">'+c.id+' · '+c.name+'</div>' +
+    '<div style="font-size:11px;color:#64748b">'+c.team+' · '+TYPE_LABEL[c.type]+'</div>' +
+    '<div style="font-size:11px;color:'+statusColor+';margin-top:3px">'+statusText+'</div></div>';
+}
+
+function cambioNext() {
+  var n = parseInt(cambioInput);
+  if (!cambioInput || isNaN(n)) { showToast('⚠️ Introduce un número'); return; }
+  if (n<1 || n>630) { showToast('⚠️ Número entre 1 y 630'); return; }
+  if (!cardMap[n]) { showToast('⚠️ Número no encontrado'); return; }
+  if (cambioStep==='dar') {
+    if (!(col[n]>0)) { showToast('⚠️ No tienes ese cromo'); return; }
+    if (col[n]===1) { showToast('⚠️ Solo tienes 1 — necesitas un repetido'); return; }
+    cambioDar = cardMap[n];
+    cambioStep = 'recibir';
+    cambioInput = '';
+  } else if (cambioStep==='recibir') {
+    cambioRecibir = cardMap[n];
+    cambioStep = 'confirm';
+    cambioInput = '';
+  }
+  renderCambioPanel();
+}
+
+function cambioConfirm() {
+  if (!cambioDar || !cambioRecibir) return;
+  if (col[cambioDar.id]<=1) delete col[cambioDar.id]; else col[cambioDar.id]--;
+  col[cambioRecibir.id] = (col[cambioRecibir.id]||0) + 1;
+  scheduleSave();
+  showToast('✅ Cambio realizado');
+  cambioReset();
+}
+
+function cambioReset() {
+  cambioStep='dar'; cambioDar=null; cambioRecibir=null; cambioInput='';
+  renderCambioPanel();
+}
+
+
 // ── PREFS ──────────────────────────────────────────────────
 function togglePref(k) {
   const n={...prefs,[k]:!prefs[k]};
@@ -169,7 +397,7 @@ function exportExcel() {
   ws['!cols']=[{wch:5},{wch:30},{wch:18},{wch:18},{wch:10},{wch:12}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Colección');
-  XLSX.writeFile(wb,'Adrenalyn_2026.xlsx');
+  const now=new Date();const ts=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+'_'+String(now.getHours()).padStart(2,'0')+String(now.getMinutes()).padStart(2,'0');XLSX.writeFile(wb,'Cromos_FIFA2026_'+ts+'.xlsx');
   showToast('📥 Excel exportado');
 }
 
@@ -236,8 +464,10 @@ function render() {
       </div>
       <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div class="view-tabs">
-        <button class="vtab${curView==='checklist'?' active':''}" onclick="setView('checklist')">📋 Por selección</button>
-        <button class="vtab${curView==='lista'?' active':''}" onclick="setView('lista')">🔍 Lista</button>
+        <button class="vtab${curView==='checklist'?' active':''}" onclick="setView('checklist')">📋</button>
+        <button class="vtab${curView==='sobre'?' active':''}" onclick="setView('sobre')">📦 Sobre</button>
+        <button class="vtab${curView==='cambio'?' active':''}" onclick="setView('cambio')">🔄 Cambio</button>
+        <button class="vtab${curView==='lista'?' active':''}" onclick="setView('lista')">🔍</button>
         <button class="vtab vset${showPrefs?' active':''}" onclick="togglePrefsPanel()">⚙️</button>
       </div>
     </div>
@@ -249,6 +479,7 @@ function render() {
           <div class="checkbox${prefs[k]?' on':''}">✓</div>
           <span class="pref-label">${l}</span>
         </div>`).join('')}
+    <div class='footer-emm'>EMM © 2026</div>
     </div>`:''}
 
     ${curView==='checklist'?`<div class="checklist">
@@ -275,6 +506,8 @@ function render() {
       }).join('')}
     </div>`:''}
 
+    ${curView==='sobre'?`<div id="sobrePanel"></div>`:''}
+    ${curView==='cambio'?`<div id="cambioPanel"></div>`:''}
     ${curView==='lista'?`
     <div class="lista-controls">
       <input class="search-input" placeholder="🔍 Buscar nº, nombre o selección..." value="${curSearch}" oninput="setSearch(this.value)">
@@ -346,7 +579,12 @@ function render() {
 }
 
 // ── HELPERS ──────────────────────────────────────────────────
-function setView(v){curView=v;render();}
+function setView(v){
+  curView=v;
+  render();
+  if(v==='sobre') setTimeout(renderSobrePanel,50);
+  if(v==='cambio') setTimeout(renderCambioPanel,50);
+}
 function setTab(t){curTab=t;render();}
 function setSearch(v){curSearch=v;render();}
 function setTeam(v){curTeam=v;render();}
@@ -374,6 +612,8 @@ window.openModal=openModal; window.closeModal=closeModal;
 window.openImport=openImport; window.closeImport=closeImport;
 window.handleFile=handleFile; window.updateModalQty=updateModalQty;
 window.addCard=addCard; window.removeCard=removeCard;
+window.sobreBuscar=sobreBuscar; window.sobreConfirmar=sobreConfirmar; window.sobreClear=sobreClear; window.sobreUndo=sobreUndo;
+window.cambioNext=cambioNext; window.cambioConfirm=cambioConfirm; window.cambioReset=cambioReset; window.cambioPrevisualize=cambioPrevisualize; window.cambioSetInput=cambioSetInput; window.sobreSetInput=sobreSetInput;
 window.exportExcel=exportExcel; window.togglePref=togglePref;
 
 // ── INIT ──────────────────────────────────────────────────────
@@ -471,6 +711,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Di
 .toast{position:fixed;top:68px;left:50%;transform:translateX(-50%);background:var(--bg2);color:#fff;padding:9px 20px;border-radius:12px;font-size:13px;font-weight:600;z-index:200;border:1px solid var(--border);white-space:nowrap;pointer-events:none;display:none}
 .loading{display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px}
 .loading-icon{font-size:52px;animation:bounce .8s infinite alternate}
+.footer-emm{text-align:center;padding:20px 0 8px;font-size:11px;color:#334155;font-weight:600;letter-spacing:.05em}
 @keyframes bounce{from{transform:translateY(0)}to{transform:translateY(-10px)}}
 </style>
 </head>
